@@ -35,7 +35,7 @@ def create_house(houseID, config, cachefile=None):
     if not os.path.isfile(cachefile):
         cachefile = None
     house = House(jsonFile, objFile, config["modelCategoryFile"],
-                  CachedFile=cachefile, GenRoomTypeMap=True)
+                  CachedFile=cachefile, GenRoomTypeMap=False)
     return house
 
 def local_create_house(h, config):
