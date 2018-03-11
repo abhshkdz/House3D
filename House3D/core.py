@@ -31,11 +31,13 @@ def create_house(houseID, config, cachefile=None):
     jsonFile = os.path.join(config['prefix'], houseID, 'house.json')
     assert (os.path.isfile(objFile) and os.path.isfile(jsonFile)), '[Environment] house objects not found! objFile=<{}>'.format(objFile)
     if cachefile is None:
+        storagefile = None
         cachefile = os.path.join(config['prefix'], houseID, 'cachedmap1k.pkl')
     if not os.path.isfile(cachefile):
+        storagefile = os.path.join(config['prefix'], houseID, 'cachedmap1k.pkl')
         cachefile = None
     house = House(jsonFile, objFile, config["modelCategoryFile"],
-                  CachedFile=cachefile, GenRoomTypeMap=True)
+                  CachedFile=cachefile, StorageFile=storagefile, GenRoomTypeMap=False)
     return house
 
 def local_create_house(h, config):
