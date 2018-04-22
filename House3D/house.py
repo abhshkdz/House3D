@@ -111,7 +111,7 @@ class House(object):
                  DebugInfoOn=False,
                  ColideRes=1000,
                  RobotRadius=0.1,
-                 RobotHeight=0.75,  # 1.0,
+                 RobotHeight=1.0,
                  CarpetHeight=0.15,
                  _IgnoreSmallHouse=False,  # should be only set true when called by "cache_houses.py"
                  setTarget=False,
