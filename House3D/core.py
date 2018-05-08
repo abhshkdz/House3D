@@ -45,9 +45,9 @@ def create_house(houseID, config, cachefile=None, ColideRes=1000):
                   ColideRes=ColideRes)
     return house
 
-def local_create_house(h, config):
+def local_create_house(h, config, ColideRes=1000):
     if not isinstance(h, House):
-        h = create_house(h, config)
+        h = create_house(h, config, ColideRes=ColideRes)
     return h
 
 class Environment():
