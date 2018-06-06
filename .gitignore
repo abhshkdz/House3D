@@ -44,7 +44,7 @@ __pycache__/
 .DS_Store
 
 # config
-config.json
+config*.json
 
 # glew
 glew.pc
