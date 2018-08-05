@@ -31,13 +31,14 @@ class SUNCGShader: public Shader {
 
     static const char* fShader;
     GLint Kd_loc, Ka_loc, mode_loc,
-          texture_loc, dissolve_loc;
+          texture_loc, dissolve_loc, minDepth_loc;
 
     enum class RenderMode : GLuint {
       TEXTURE_LIGHTING = 0,
       LIGHTING = 1,
       CONSTANT = 2,
-      DEPTH = 3
+      DEPTH = 3,
+      INVDEPTH = 4
     };
 };
 
@@ -46,7 +47,8 @@ class SUNCGScene : public ObjSceneBase {
     explicit SUNCGScene(
         std::string obj_file,
         std::string model_category_file,
-        std::string semantic_label_file);
+        std::string semantic_label_file,
+        float minDepth = 0.3);
     ~SUNCGScene() {}
 
     void draw() override;
@@ -59,7 +61,8 @@ class SUNCGScene : public ObjSceneBase {
       RGB = 0,
       SEMANTIC = 1,
       DEPTH = 2,
-      INSTANCE = 3
+      INSTANCE = 3,
+      INVDEPTH = 4
     };
 
     enum class ObjectNameResolution {
@@ -73,6 +76,15 @@ class SUNCGScene : public ObjSceneBase {
     { object_name_mode_ = m; }
 
     RenderMode get_mode() const { return mode_; }
+
+    std::string get_name_from_instance_color(int r, int g, int b) const {
+      int key = r * 256 * 256 + g * 256 + b;
+      auto itr = instance_color_to_name_.find(key);
+      if (itr != instance_color_to_name_.end()) {
+        return itr->second;
+      }
+      return "";
+    }
 
   protected:
     void parse_scene();
@@ -97,7 +109,7 @@ class SUNCGScene : public ObjSceneBase {
     ColorMappingReader semantic_color_;
     glm::vec3 background_color_;
     std::vector<Mesh> mesh_;
-
+    float minDepth_; // used for inverse depth mode
 
     struct MaterialDesc {
       int id;  // material id in tinyobj
@@ -110,6 +122,10 @@ class SUNCGScene : public ObjSceneBase {
     };
     // material for each mesh. Must have same size as mesh_
     std::vector<MaterialDesc> materials_;
+
+    // keys: r * 256 * 256 + g * 256 + b
+    // value: shape.name as in the obj file
+    std::unordered_map<int, std::string> instance_color_to_name_;
 };
 
 } // namespace render

@@ -10,10 +10,13 @@
 
 #include "category.hh"
 
+#include <stdexcept>
+
 using namespace std;
 
 namespace {
 
+// Returns: a list of color, each represented as 3 integers in [0, 255]
 std::vector<glm::vec3> get_uniform_sampled_colors(int count) {
   int interval_length = static_cast<int>(pow(256, 3)) / (count + 2);
   int current_color = interval_length;
@@ -24,7 +27,7 @@ std::vector<glm::vec3> get_uniform_sampled_colors(int count) {
     int g = (current_color / 256) % 256;
     int b = (current_color / 256 / 256) % 256;
 
-    result.push_back(glm::vec3{r / 255.0, g / 255.0, b / 255.0});
+    result.push_back(glm::vec3{r, g, b});
 
     current_color += interval_length;
   }
@@ -46,6 +49,13 @@ in vec3 normal;
 in vec2 texcoord;
 out vec4 fragcolor;
 
+// Note these values need to match DEFAULT_NEAR and DEFAULT_FAR in camera.h
+const float NEAR = 0.1f;
+const float FAR  = 100.0f;
+const float INV_NEAR = 1.0f/NEAR;
+const float INV_FAR  = 1.0f/FAR;
+const float DEPTH_SCALE = 20.0f;
+
 uniform uint mode;
 // 0: light + texture
 // 1: light
@@ -56,27 +66,37 @@ uniform vec3 Ka;
 uniform vec3 eye;
 uniform float dissolve;
 uniform sampler2D texture_diffuse;
+uniform float minDepth = NEAR;
 
-// TODO change NEAR to 0.01
-float near = 0.1;
-float far  = 100.0;
-float DEPTH_SCALE = 20.0;
+// Convert depth buffer value to inverse depth.
+// The depth buffer value <d> is 0.0 for INV_NEAR, 1.0 for INV_FAR.
+float InverseDepth(float d) {
+    return INV_NEAR + d * (INV_FAR - INV_NEAR);
+}
 
-// convert depth buffer value to true depth
-// https://learnopengl.com/#!Advanced-OpenGL/Depth-testing
-float LinearizeDepth(float depth) {
-    float z = depth * 2.0 - 1.0; // back to NDC
-    return (2.0 * near * far) / (far + near - z * (far - near));
+// Convert depth buffer value to true depth.
+float TrueDepth(float d) {
+    return 1.0f / InverseDepth(d);
 }
 
 void main() {
     if (mode == 2u) { // constant
-      fragcolor = vec4(Kd, 1.f);
+      fragcolor = vec4(Kd, 1.0f);
       return;
     }
-    if (mode == 3u) { // depth
-      float depth = LinearizeDepth(gl_FragCoord.z) / DEPTH_SCALE;
-      fragcolor = vec4(vec3(depth), 1.0);
+    else if (mode == 3u) { // depth
+      float scaledDepth = TrueDepth(gl_FragCoord.z) / DEPTH_SCALE;
+      fragcolor = vec4(vec3(scaledDepth), 1.0f);
+      return;
+    }
+    else if (mode == 4u) { // inverse depth
+      float invDepth = InverseDepth(gl_FragCoord.z);
+      // invDepth \in [INV_FAR, INV_NEAR] i.e., [0.01, 10.0] with above values.
+      // We convert to 16 bits, with 65535 corresponding to INV_NEAR
+      float f = 65535 * minDepth * invDepth + 0.5; // \in [0.0, 65535.0]
+      float ms = floor(f/256.0f); // \in {0.0, .., 255.0}
+      float ls = floor(f - ms * 256.0f); // \in {0.0, .., 255.0}
+      fragcolor = vec4(ms/255.0f, ls/255.0f, 0.0f, 1.0f);
       return;
     }
 
@@ -96,9 +116,9 @@ void main() {
     vec3 in_vec = normalize(eye - pos);
     // have some diffuse color even when orthogonal
     float scale = max(dot(in_vec, normal), 0.3f);
-    vec3 ambient = Ka * 0.1;
+    vec3 ambient = Ka * 0.1f;
     color = color * scale + ambient;
-    color = clamp(color, 0.f, 1.f);
+    color = clamp(color, 0.0f, 1.0f);
     fragcolor = vec4(color, alpha);
 }
 )xxx";
@@ -111,15 +131,17 @@ SUNCGShader::SUNCGShader():
   mode_loc = getUniformLocation("mode");
   texture_loc = getUniformLocation("texture_diffuse");
   dissolve_loc = getUniformLocation("dissolve");
+  minDepth_loc = getUniformLocation("minDepth");
   };
 
 
 SUNCGScene::SUNCGScene(string obj_file, string model_category_file,
-    string semantic_label_file):
+    string semantic_label_file, float minDepth):
   ObjSceneBase{obj_file},
   textures_{obj_.materials, obj_.base_dir},
   model_category_{model_category_file},
-  semantic_color_{semantic_label_file}
+  semantic_color_{semantic_label_file},
+  minDepth_{minDepth}
 {
     background_color_ = semantic_color_.get_background_color();
 
@@ -194,6 +216,9 @@ void SUNCGScene::parse_scene() {
     auto& shp = obj_.shapes[i];
     glm::vec3 label_color = get_color_by_shape_name(shp.name);
     glm::vec3 instance_color = rand_instance_colors[shp.original_index];
+    int instance_color_key = (int)instance_color.x * 256 * 256 + (int)instance_color.y * 256 + (int)instance_color.z;
+    instance_color_to_name_[instance_color_key] = shp.name;
+    instance_color /= 255.;
     tinyobj::mesh_t& tmesh = shp.mesh;
     int nr_face = tmesh.num_face_vertices.size();
     auto& matids = tmesh.material_ids;
@@ -255,11 +280,19 @@ void SUNCGScene::draw() {
       glUniform1ui(shader_.mode_loc, static_cast<GLuint>(mode));
       mesh_[i].draw();
     }
-  } else {    // depth
+  } else if (mode_ == RenderMode::DEPTH) {
     auto mode = SUNCGShader::RenderMode::DEPTH;
     glUniform1ui(shader_.mode_loc, static_cast<GLuint>(mode));
     for (int i = 0; i < nr_mesh; ++i)
       mesh_[i].draw();
+  } else if (mode_ == RenderMode::INVDEPTH) {
+    auto mode = SUNCGShader::RenderMode::INVDEPTH;
+    glUniform1ui(shader_.mode_loc, static_cast<GLuint>(mode));
+    glUniform1f(shader_.minDepth_loc, minDepth_);
+    for (int i = 0; i < nr_mesh; ++i)
+      mesh_[i].draw();
+  } else {
+    throw runtime_error("unknown render mode");
   }
 }
 

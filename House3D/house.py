@@ -3,16 +3,14 @@
 #
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
-import time
-import sys
-import numpy as np
-import json
-import csv
-import pickle
-import itertools
-import copy
 
-import pdb
+import csv
+import cv2
+import itertools
+import json
+import numpy as np
+import pickle
+import time
 
 __all__ = ['House']
 
@@ -33,6 +31,7 @@ def _equal_room_tp(room, target):
             DO NOT swap the order of arguments
     """
     room = room.lower()
+    target = target.lower()
     return (room == target) or \
             ((target == 'bathroom') and (room == 'toilet')) or \
             ((target == 'bedroom') and (room == 'guest_room'))
@@ -58,8 +57,8 @@ def parse_walls(objFile, lower_bound = 1.0):
             for i in range(3):
                 if v[i] < v_min[i]: v_min[i] = v[i]
                 if v[i] > v_max[i]: v_max[i] = v[i]
-        obj = dict()
-        obj['bbox'] = dict()
+        obj = {}
+        obj['bbox'] = {}
         obj['bbox']['min']=v_min
         obj['bbox']['max']=v_max
         if v_min[1] < lower_bound:
@@ -89,8 +88,9 @@ def parse_walls(objFile, lower_bound = 1.0):
     return ret_walls
 
 
-def fill_region(proj,x1,y1,x2,y2,c):
-    proj[x1:(x2+1), y1:(y2+1)] = c
+def fill_region(proj, x1, y1, x2, y2, c):
+    proj[x1:(x2 + 1), y1:(y2 + 1)] = c
+
 
 def fill_obj_mask(house, dest, obj, c=1):
     n_row = dest.shape[0]
@@ -115,6 +115,7 @@ class House(object):
                  CarpetHeight=0.15,
                  _IgnoreSmallHouse=False,  # should be only set true when called by "cache_houses.py"
                  setTarget=False,
+                 ApproximateMovableMap=False,
                  DebugMessages=False
                  ):
         """Initialization and Robot Parameters
@@ -136,6 +137,8 @@ class House(object):
             RobotRadius (double, optional): radius of the robot/agent (generally should not be changed)
             RobotHeight (double, optional): height of the robot/agent (generally should not be changed)
             CarpetHeight (double, optional): maximum height of the obstacles that agent can directly go through (gennerally should not be changed)
+            SetTarget (bool, optional): whether or not to choose a default target room and pre-compute the valid locations
+            ApproximateMovableMap (bool, optional): Fast initialization of valid locations which are not as accurate or fine-grained.  Requires OpenCV if true
         """
         if DebugMessages == True:
             ts = time.time()
@@ -229,7 +232,7 @@ class House(object):
                 print('Generate Movability Map ...')
                 ts = time.time()
             self.moveMap = np.zeros((self.n_row+1, self.n_row+1), dtype=np.int8)  # initially not movable
-            self.genMovableMap()
+            self.genMovableMap(ApproximateMovableMap)
             if DebugMessages == True:
                 print('  --> Done! Elapsed = %.2fs' % (time.time()-ts))
 
@@ -245,8 +248,8 @@ class House(object):
         # set target room connectivity
         if DebugMessages == True:
             ts = time.time()
-        self.connMapDict = dict()
-        self.roomTypeLocMap = dict()    # roomType -> feasible locations
+        self.connMapDict = {}
+        self.roomTypeLocMap = {}    # roomType -> feasible locations
         self.targetRoomTp = None
         self.targetRooms = []
         self.connMap = None
@@ -299,7 +302,7 @@ class House(object):
             dirs = [[0, 1], [1, 0], [-1, 0], [0, -1]]
         comps = []
         open_comps = set()
-        visit = dict()
+        visit = {}
         n = 0
         for x in range(x1, x2+1):
             for y in range(y1, y2+1):
@@ -372,8 +375,9 @@ class House(object):
         self.inroomDist = inroomDist = np.ones((self.n_row+1, self.n_row+1), dtype=np.float32) * -1
         dirs = [[0, 1], [1, 0], [-1, 0], [0, -1]]
         que = []
-        flag_find_open_components = True
-        for _ in range(2):
+        for flag_find_open_components in [True, False]:
+            if not flag_find_open_components:
+                print('WARINING!!!! [House] No Space Found for Room Type {}! Now search even for closed region!!!'.format(targetRoomTp))
             for room in targetRooms:
                 _x1, _, _y1 = room['bbox']['min']
                 _x2, _, _y2 = room['bbox']['max']
@@ -399,12 +403,8 @@ class House(object):
                     inroomDist[x, y] = tdist
                 for x, y in curr_major_coors:
                     inroomDist[x, y] -= min_dist_to_center
-            if len(que) > 0: break
-            if flag_find_open_components:
-                flag_find_open_components = False
-            else:
+            if len(que) > 0:
                 break
-            print('WARINING!!!! [House] No Space Found for Room Type {}! Now search even for closed region!!!'.format(targetRoomTp))
         assert len(que) > 0, "Error!! [House] No space found for room type {}. House ID = {}"\
             .format(targetRoomTp, (self._id if hasattr(self, '_id') else 'NA'))
         ptr = 0
@@ -455,6 +455,10 @@ class House(object):
 
 
     def getRandomLocationForRoom(self, room_node):
+        '''Given a room node from the SUNCG house.json, returns a randomly
+           sampled valid location from that room.  Returns None if no valid
+           locations are found.
+        '''
         room_locs = self._getValidRoomLocations(room_node)
         if len(room_locs) == 0:
             return None
@@ -559,10 +563,30 @@ class House(object):
                 fill_region(self._debugMap, x1, y1, x2, y2, 0.8)
 
 
-    def genMovableMap(self):
+
+    def genMovableMap(self, approximate=False):
         roi_bounds = self._getRegionsOfInterest()
         for roi in roi_bounds:
-            self._updateMovableMap(*roi)
+            if approximate:
+                self._updateMovableMapApproximate(*roi)
+            else:
+                self._updateMovableMap(*roi)
+
+        if approximate:
+            self._adjustApproximateRobotMoveMap()
+
+
+    def _adjustApproximateRobotMoveMap(self):
+        # Here we haven't yet accounted for the robot radius, so do some
+        # approximate accommodation
+        robotGridSize = int(np.rint(self.robotRad * 2 * self.n_row / self.L_det))
+        if robotGridSize > 1:
+            robotGridRadius = robotGridSize // 2
+            kernel = np.zeros((robotGridSize, robotGridSize), np.uint8)
+            cv2.circle(kernel, (robotGridRadius + 1, robotGridRadius + 1), robotGridRadius, color=1, thickness=-1)
+            filtered_obstacles = (self.moveMap == 0).astype(np.uint8)
+            dilated_obstacles = cv2.dilate(filtered_obstacles, kernel, iterations=1)
+            self.moveMap = (dilated_obstacles == 0).astype(np.uint8)
 
 
     def _updateMovableMap(self, x1, y1, x2, y2):
@@ -572,6 +596,10 @@ class House(object):
                     cx, cy = self.to_coor(i, j, True)
                     if self.check_occupy(cx,cy):
                         self.moveMap[i,j] = 1
+
+
+    def _updateMovableMapApproximate(self, x1, y1, x2, y2):
+        self.moveMap[x1:x2, y1:y2] = (self.obsMap[x1:x2, y1:y2] == 0).astype(self.moveMap.dtype)
 
 
     def _getRegionsOfInterest(self):

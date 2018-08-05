@@ -87,14 +87,16 @@ class Environment():
     def set_render_mode(self, mode):
         """
         Args:
-            mode (str or enum): one of 'rgb', 'depth', 'semantic',
-                RenderMode.RGB, RenderMode.DEPTH, RenderMode.SEMANTIC
+            mode (str or enum): either a RenderMode value or its string version.
+                                'rgb', 'depth', 'semantic', 'instance', or 'invdepth'
         """
         mappings = {
-                'rgb': RenderMode.RGB,
-                'depth': RenderMode.DEPTH,
-                'semantic': RenderMode.SEMANTIC,
-                'instance': RenderMode.INSTANCE }
+            'rgb': RenderMode.RGB,
+            'depth': RenderMode.DEPTH,
+            'semantic': RenderMode.SEMANTIC,
+            'instance': RenderMode.INSTANCE,
+            'invdepth': RenderMode.INVDEPTH,
+        }
         if isinstance(mode, six.string_types):
             mode = mode.lower()
             self.api_mode = mappings[mode]
@@ -174,7 +176,7 @@ class Environment():
 
         rad = house.robotRad / house.L_det * house.n_row
         x, y = house.to_grid(x, y)
-        locMap = cv2.circle(locMap, (x, y), int(rad), (255, 50, 50), thickness=-1)
+        cv2.circle(locMap, (x, y), int(rad), (255, 50, 50), thickness=-1)
         locMap = cv2.resize(locMap, resolution)
         return locMap
 
