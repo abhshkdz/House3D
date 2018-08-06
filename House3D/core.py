@@ -30,7 +30,7 @@ def create_house(houseID, config, cachefile=None, ColideRes=1000):
     objFile = os.path.join(config['prefix'], houseID, 'house.obj')
     jsonFile = os.path.join(config['prefix'], houseID, 'house.json')
     assert (os.path.isfile(objFile) and os.path.isfile(jsonFile)), '[Environment] house objects not found! objFile=<{}>'.format(objFile)
-    crs = 1 if cr == 1000 else cr / 1000
+    crs = 1 if ColideRes == 1000 else ColideRes / 1000
     if cachefile is None:
         storagefile = None
         cachefile = os.path.join(config['prefix'], houseID, 'cachedmap%sk.pkl' % str(crs))
