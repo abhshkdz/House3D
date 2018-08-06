@@ -113,9 +113,9 @@ class House(object):
                  RobotRadius=0.1,
                  RobotHeight=1.0,
                  CarpetHeight=0.15,
-                 _IgnoreSmallHouse=False,  # should be only set true when called by "cache_houses.py"
-                 setTarget=False,
+                 SetTarget=False,
                  ApproximateMovableMap=False,
+                 _IgnoreSmallHouse=False,  # should be only set true when called by "cache_houses.py"
                  DebugMessages=False
                  ):
         """Initialization and Robot Parameters
@@ -139,6 +139,7 @@ class House(object):
             CarpetHeight (double, optional): maximum height of the obstacles that agent can directly go through (gennerally should not be changed)
             SetTarget (bool, optional): whether or not to choose a default target room and pre-compute the valid locations
             ApproximateMovableMap (bool, optional): Fast initialization of valid locations which are not as accurate or fine-grained.  Requires OpenCV if true
+            DebugMessages=False (bool, optional): whether or not to show debug messages
         """
         if DebugMessages == True:
             ts = time.time()
@@ -182,10 +183,9 @@ class House(object):
         assert self.default_roomTp is not None, 'Cannot Find Any Desired Rooms!'
 
         if DebugMessages == True:
-            print('>> Target Room Type Selected = {}'.format(self.default_roomTp))
-
-        if DebugMessages == True:
+            print('>> Default Target Room Type Selected = {}'.format(self.default_roomTp))
             print('  --> Done! Elapsed = %.2fs' % (time.time()-ts))
+
         if _IgnoreSmallHouse and ((len(self.all_desired_roomTypes) < 2) or ('kitchen' not in self.all_desired_roomTypes)):
             self.all_desired_roomTypes=[]
             return
@@ -254,7 +254,7 @@ class House(object):
         self.targetRooms = []
         self.connMap = None
         self.inroomDist = None
-        if setTarget == True:
+        if SetTarget:
             if DebugMessages == True:
                 print('Generate Target connectivity Map (Default <{}>) ...'.format(self.default_roomTp))
             self.setTargetRoom(self.default_roomTp, _setEagleMap=True)
