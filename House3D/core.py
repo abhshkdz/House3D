@@ -30,15 +30,12 @@ def create_house(houseID, config, cachefile=None, ColideRes=1000):
     objFile = os.path.join(config['prefix'], houseID, 'house.obj')
     jsonFile = os.path.join(config['prefix'], houseID, 'house.json')
     assert (os.path.isfile(objFile) and os.path.isfile(jsonFile)), '[Environment] house objects not found! objFile=<{}>'.format(objFile)
-    if ColideRes == 1000:
-        crs = 1
-    else:
-        crs = ColideRes / 1000
+    crs = 1 if cr == 1000 else cr / 1000
     if cachefile is None:
         storagefile = None
-        cachefile = os.path.join(config['prefix'], houseID, 'cachedmap'+str(crs)+'k.pkl')
+        cachefile = os.path.join(config['prefix'], houseID, 'cachedmap%sk.pkl' % str(crs))
     if not os.path.isfile(cachefile):
-        storagefile = os.path.join(config['prefix'], houseID, 'cachedmap'+str(crs)+'k.pkl')
+        storagefile = os.path.join(config['prefix'], houseID, 'cachedmap%sk.pkl' % str(crs))
         cachefile = None
     house = House(jsonFile, objFile, config["modelCategoryFile"],
                   CachedFile=cachefile, StorageFile=storagefile, GenRoomTypeMap=False,
@@ -58,6 +55,7 @@ class Environment():
             house: either a house object or a house id
             config: configurations containing path to meta-data files
             seed: if not None, set the seed
+            ColideRes: resolution of the 2d map for collision checking
         """
         self.config = config
         if not isinstance(house, House):
