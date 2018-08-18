@@ -163,14 +163,14 @@ class House(object):
             print('[Warning] Currently only support ground floor! <total floors = %d>' % (len(house['levels'])))
 
         self.level = level = house['levels'][0]  # only support ground floor now
-        self.L_min_coor = _L_lo = np.array(level['bbox']['min'])
+        self.L_min_coor = _L_lo = np.array(level['bbox']['min']).astype('float32')
         self.L_lo = min(_L_lo[0], _L_lo[2])
-        self.L_max_coor = _L_hi = np.array(level['bbox']['max'])
+        self.L_max_coor = _L_hi = np.array(level['bbox']['max']).astype('float32')
         self.L_hi = max(_L_hi[0], _L_hi[2])
         self.L_det = self.L_hi - self.L_lo
         self.n_row = ColideRes
         self.eagle_n_row = EagleViewRes
-        self.grid_det = self.L_det / self.n_row
+        self.grid_det = self.L_det / np.float32(self.n_row)
         self.all_obj = [node for node in level['nodes'] if node['type'].lower() == 'object']
         self.all_rooms = [node for node in level['nodes'] if (node['type'].lower() == 'room') and ('roomTypes' in node)]
         self.all_roomTypes = [room['roomTypes'] for room in self.all_rooms]
@@ -643,6 +643,8 @@ class House(object):
         """
         if n_row is None: n_row = self.n_row
         tiny = 1e-9
+        x, y = np.float32(x), np.float32(y)
+        n_row, tiny = np.float32(n_row), np.float32(tiny)
         tx = np.floor((x - self.L_lo) / self.L_det * n_row + tiny)
         ty = np.floor((y - self.L_lo) / self.L_det * n_row + tiny)
         return int(tx), int(ty)
@@ -651,10 +653,11 @@ class House(object):
         """
         Convert grid location to SUNCG dataset continuous coordinate (the grid center will be returned when shft is True)
         """
+        x, y = np.float32(x), np.float32(y)
         tx, ty = x * self.grid_det + self.L_lo, y * self.grid_det + self.L_lo
         if shft:
-            tx += 0.5 * self.grid_det
-            ty += 0.5 * self.grid_det
+            tx += np.float32(0.5) * self.grid_det
+            ty += np.float32(0.5) * self.grid_det
         return tx, ty
 
     def _check_grid_occupy(self,cx,cy,gx,gy):
