@@ -10,6 +10,7 @@
 #undef INCLUDE_GL_CONTEXT_HEADERS
 #include "glContext.hh"
 #include <iostream>
+#include <atomic>
 
 #ifdef __linux__
 #include <sys/stat.h>
@@ -24,6 +25,8 @@ using namespace std;
 
 namespace {
 
+std::atomic_int NUM_EGLCONTEXT_ALIVE{0};
+
 #ifdef __linux__
 const EGLint EGLconfigAttribs[] = {
   EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
@@ -35,11 +38,11 @@ const EGLint EGLconfigAttribs[] = {
   EGL_NONE
 };
 
-const EGLint EGLpbufferAttribs[] = {
-  EGL_WIDTH, 9,
-  EGL_HEIGHT, 9,
-  EGL_NONE,
-};
+// const EGLint EGLpbufferAttribs[] = {
+//   EGL_WIDTH, 9,
+//   EGL_HEIGHT, 9,
+//   EGL_NONE,
+// };
 
 
 bool check_nvidia_readable(int device) {
@@ -127,6 +130,7 @@ GLFWContext::~GLFWContext() {
 #ifdef __linux__
 // https://devblogs.nvidia.com/parallelforall/egl-eye-opengl-visualization-without-x-server/
 EGLContext::EGLContext(Geometry win_size, int device): GLContext{win_size} {
+  NUM_EGLCONTEXT_ALIVE.fetch_add(1);
   auto checkError = [](EGLBoolean succ) {
     EGLint err = eglGetError();
     if (err != EGL_SUCCESS)
@@ -157,10 +161,12 @@ EGLContext::EGLContext(Geometry win_size, int device): GLContext{win_size} {
         if (check_nvidia_readable(i))
           visible_devices.push_back(i);
       }
-    } else {
+    } else if (numDevices == 1) {
       // TODO we may still be using nvidia GPUs, but there is no way to tell.
       // But it's very rare that you'll start a docker and hide the only one GPU from it.
       visible_devices.push_back(0);
+    } else {
+      error_exit("[EGL] eglQueryDevicesEXT() cannot find any EGL devices!");
     }
 
     if (device >= static_cast<int>(visible_devices.size())) {
@@ -218,6 +224,9 @@ EGLContext::EGLContext(Geometry win_size, int device): GLContext{win_size} {
 }
 
 EGLContext::~EGLContext() {
+  // To debug https://github.com/facebookresearch/House3D/issues/37
+  // int num_alive = NUM_EGLCONTEXT_ALIVE.fetch_sub(1);
+  // print_debug("Inside ~EGLContext, #alive contexts=%d\n", num_alive);
   // 6. Terminate EGL when finished
   eglDestroyContext(eglDpy_, eglCtx_);
   eglTerminate(eglDpy_);
@@ -251,7 +260,7 @@ GLXHeadlessContext::GLXHeadlessContext(Geometry win_size): GLContext{win_size} {
 }
 
 GLXHeadlessContext::~GLXHeadlessContext() {
-  glXMakeContextCurrent(dpy_, NULL, NULL, NULL);
+  glXMakeContextCurrent(dpy_, GLXDrawable(NULL), GLXDrawable(NULL), NULL);
   glXDestroyContext(dpy_, context_);
   glXDestroyPbuffer(dpy_, pbuffer_);
   XCloseDisplay(dpy_);
